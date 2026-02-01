@@ -11,6 +11,8 @@
 #define NAME_LENGTH 16
 
 //communicates
+#define IN_BOX_MESSAGE 20
+#define ERROR 101
 #define LOGIN 1
 #define MESSAGE 2
 #define USER_LIST 3
@@ -22,6 +24,7 @@
 #define GROUPS_LIST 9
 #define GROUP_USERS 10
 #define LEAVE_GROUP 11
+#define OPEN_BOX 12
 
 struct message {
     long mesg_type;
@@ -58,6 +61,24 @@ void send_message(struct message* msg, int sender_id, int sid) {
        0);
 }
 
+void send_server_message(struct message* msg, int id, int sid) {
+    msg->sender_id = id;
+    msg->receiver_id = -1;
+    msgsnd(sid, msg,
+    sizeof(*msg) - sizeof(long),0);
+}
+
+void heartbeat(struct message* msg, int id, int sid) {
+    sleep(3);
+    msg->sender_id = id;
+    msg->receiver_id = -1;
+    strcpy(msg->mesg_text, "still alive");
+    msg->mesg_type = HEART_BEAT;
+    msgsnd(sid, msg,
+       sizeof(*msg) - sizeof(long),
+       0);
+}
+
 void recieve_message(struct message* msg) {
     msgrcv(myid, msg,
    sizeof(*msg) - sizeof(long),
@@ -67,6 +88,9 @@ void recieve_message(struct message* msg) {
     }
     else if (msg->mesg_type == SERVER_COMMUNICATE) {
         printf("\nReceived server communicate:\n %s\n", msg->mesg_text);
+    }
+    else if (msg->mesg_type == IN_BOX_MESSAGE) {
+        printf("\nReceived in box message from %s:\n %s\n", msg->name, msg->mesg_text);
     }
 }
 
@@ -94,6 +118,10 @@ int main() {
     msgrcv(myid, &msg,
            sizeof(msg) - sizeof(long),
            0, 0);
+    if (msg.mesg_type==ERROR) {
+        printf("loggin failed");
+        exit(1);
+    }
     printf("Your id is: %d\n", msg.receiver_id);
     id=msg.receiver_id;
     if (fork() == 0) {
@@ -155,13 +183,9 @@ int main() {
                    0);
             }
             else if (msg.mesg_type == GROUP_USERS) {
-                msg.sender_id = id;
-                msg.receiver_id = -1;
                 printf("Enter group name: ");
                 scanf("%s", msg.name);
-                msgsnd(sid, &msg,
-               sizeof(msg) - sizeof(long),
-                0);
+                send_server_message(&msg, id, sid);
                 sleep(1);
             }
             else if (msg.mesg_type == LEAVE_GROUP) {
@@ -174,6 +198,13 @@ int main() {
                 0);
                 sleep(1);
             }
+            else if (msg.mesg_type == OPEN_BOX) {
+                msg.sender_id = id;
+                msg.receiver_id = -1;
+                msgsnd(sid, &msg,
+                sizeof(msg) - sizeof(long),
+                0);
+            }
         }
     }
     else {
@@ -183,14 +214,7 @@ int main() {
             }
             else {
                 while (1) {
-                    sleep(5);
-                    msg.sender_id = id;
-                    msg.receiver_id = -1;
-                    strcpy(msg.mesg_text, "still alive");
-                    msg.mesg_type = HEART_BEAT;
-                    msgsnd(sid, &msg,
-                       sizeof(msg) - sizeof(long),
-                       0);
+                    heartbeat(&msg, id, sid);
                 }
             }
         }

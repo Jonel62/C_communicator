@@ -5,14 +5,18 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <time.h>
 
 #define NAME_LENGTH 16
 #define MAX 256
 #define MAX_USERS 24
 #define MAX_GROUPS 16
+#define MESSAGE_IN_BOX 20
 
 //communicates
+#define IN_BOX_MESSAGE 20
+#define ERROR 101
 #define LOGIN 1
 #define MESSAGE 2
 #define USER_LIST 3
@@ -24,13 +28,7 @@
 #define GROUPS_LIST 9
 #define GROUP_USERS 10
 #define LEAVE_GROUP 11
-
-struct user {
-    int user_id;
-    int queue_id;
-    char name[NAME_LENGTH];
-    long last_seen;
-};
+#define OPEN_BOX 12
 
 struct message {
     long mesg_type;
@@ -40,7 +38,17 @@ struct message {
     char mesg_text[MAX];
 };
 
-const struct user user_default = {-1,-1,""};
+struct user {
+    int user_id;
+    int queue_id;
+    char name[NAME_LENGTH];
+    long last_seen;
+    bool is_online;
+    int messages_in_box;
+    struct message buffer[MESSAGE_IN_BOX];
+};
+
+const struct user user_default = {-1,-1,"", 0, false, 0};
 
 void init_user_list(struct user* users) {
     for (int i=0; i<MAX_USERS; i++) {
@@ -54,8 +62,7 @@ struct group {
 };
 
 void send_communicate(char text[MAX], struct message* msg, struct user* user) {
-    msg->receiver_id=user->user_id;
-    msg->sender_id=-1;
+
     msg->mesg_type = SERVER_COMMUNICATE;
     strcpy(msg->mesg_text, text);
     if (msgsnd(user->queue_id, msg,
@@ -93,18 +100,21 @@ void login_user(struct message* msg, struct user* user, int* i) {
     user->user_id = *i;
     user->queue_id = msg->sender_id;
     user->last_seen = time(NULL);
+    user->is_online = true;
     strcpy(user->name, msg->mesg_text);
-    printf("Login from client queue: %d as %s\n", user->queue_id, user->name);
+    printf("Login from client queue: %s with id %d\n", user->name, user->user_id);
+    msg->receiver_id= user->user_id;
     send_communicate("logged", msg, user);
 }
 
-int find_free_slot(struct user* users) {
+int find_user(struct user* users, struct message* msg) {
     for (int j=0; j<MAX_USERS; j++) {
-        if (users[j].user_id < 0) {
+        if (strcmp(users[j].name, msg->mesg_text)==0) {
             return j;
         }
     }
-    printf("There are none slots avialable\n");
+    printf("User don't exist\n");
+    return -1;
 }
 
 int find_free_group_slot(struct group* groups) {
@@ -117,15 +127,24 @@ int find_free_group_slot(struct group* groups) {
 }
 
 
-void send_message(struct message* msg, struct user* user) {
+void send_message(struct message* msg, struct user * users) {
     printf("Message from client: %d to %d\n", msg->sender_id, msg->receiver_id);
-    msg->mesg_type=MESSAGE;
-    if (msgsnd(user->queue_id, msg,
-               sizeof(*msg) - sizeof(long),
-               0) == -1) {
-        perror("msgsnd");
-               }
-    printf("Sended message to queue %d\n", user->queue_id);
+    if (users[msg->receiver_id].is_online) {
+        if (msg->mesg_type!=IN_BOX_MESSAGE)
+            msg->mesg_type=MESSAGE;
+        if (msgsnd(users[msg->receiver_id].queue_id, msg,
+                   sizeof(*msg) - sizeof(long),
+                   0) == -1) {
+            perror("msgsnd");
+                   }
+        printf("Sended message to queue %d\n", users[msg->receiver_id].queue_id);
+    }
+    else {
+        msg->mesg_type=IN_BOX_MESSAGE;
+        users[msg->receiver_id].buffer[users[msg->receiver_id].messages_in_box]=*msg;
+        users[msg->receiver_id].messages_in_box=users[msg->receiver_id].messages_in_box+1;
+        printf("message sended to box\n");
+    }
 }
 
 void find_receiver(struct message* msg, struct user* users) {
@@ -182,23 +201,26 @@ void send_groups_list(struct message* msg, struct group* groups, struct user* us
 void send_user_list(struct message* msg, struct user* users) {
     char text[MAX]="Currently logged users: ";
     for (int k=0; k<MAX_USERS; k++) {
-        if (users[k].user_id >= 0) {
+        if (users[k].user_id >= 0 && users[k].is_online) {
             strcat(text, users[k].name);
             strcat(text, ", ");
         }
     }
     send_communicate(text, msg, &users[msg->sender_id]);
-    printf("Sended user list to %s\n", users[msg->receiver_id].name);
+    printf("Sended user list to %s\n", users[msg->sender_id].name);
 }
 void check_users(struct user* users) {
     for (int j = 0; j < MAX_USERS; j++) {
-        if (users[j].user_id < 0) {
+        if (users[j].user_id < 0 || users[j].is_online == false) {
             continue;
         }
         long last_seen = time(NULL) - users[j].last_seen;
         if (last_seen >= 10) {
+            printf("User %d not responding\n user %d is offline\n", users[j].user_id, users[j].user_id);
+            char buf[NAME_LENGTH];
+            strcpy(buf, users[j].name);
             users[j]=user_default;
-            printf("User %d not responding\n deleting user...\n", users[j].user_id);
+            strcpy(users[j].name, buf);
         }
     }
 }
@@ -210,9 +232,29 @@ void make_group(int* i, struct group* group, struct message* msg) {
 }
 
 int main() {
+
     struct group groups[MAX_GROUPS];
     struct user users[MAX_USERS];
     init_user_list(users);
+    FILE *file;
+    char buffer[MAX];
+    int n = 0;
+    //loading file//
+    file = fopen("users.txt", "r");
+
+    if (file == NULL) {
+        perror("File not found");
+        return 1;
+    }
+
+    while (fgets(buffer, MAX, file) != NULL && n < MAX_USERS) {
+        buffer[strcspn(buffer, "\r\n")] = 0;
+        strcpy(users[n].name, buffer);
+        users[n].user_id = n;
+        n++;
+    }
+    fclose(file);
+    /////////
     init_group_list(groups);
     key_t key = ftok("server", 65);
     sid = msgget(key, 0666 | IPC_CREAT);
@@ -231,14 +273,28 @@ int main() {
             continue;
                    }
         if (msg.mesg_type == LOGIN) {
-            i = find_free_slot(users);
-            login_user(&msg, &users[i], &i);
+            i = find_user(users, &msg);
+            if (i != -1) {
+                login_user(&msg, &users[i], &i);
+            }
+            else {
+                printf("Loggin failed. User not found.\n");
+                msg.mesg_type = ERROR;
+                if (msgsnd(msg.sender_id, &msg,
+                   sizeof(msg) - sizeof(long),
+                   0) == -1) {
+                    perror("msgsnd");
+                    }
+            }
         }
         else if (msg.mesg_type == MESSAGE) {
+            char buf[MAX];
+            strcpy(buf, msg.mesg_text);
             send_communicate("Your message has been accepted", &msg, &users[msg.sender_id]);
+            strcpy(msg.mesg_text, buf);
             find_receiver(&msg, users);
             find_sender_name(&msg, users);
-            send_message(&msg, &users[msg.receiver_id]);
+            send_message(&msg, users);//&users[msg.receiver_id]);
             send_communicate("Your message has been delivered", &msg, &users[msg.sender_id]);
         }
         else if (msg.mesg_type == USER_LIST) {
@@ -260,8 +316,11 @@ int main() {
             printf("Added user %d to group %s\n", msg.sender_id, groups[i].name);
         }
         else if (msg.mesg_type == GROUP_MESSAGE) {
+            char buf[MAX];
             printf("Message to group %s from %d\n", msg.name, msg.sender_id);
+            strcpy(buf, msg.mesg_text);
             send_communicate("Your message has been accepted", &msg, &users[msg.sender_id]);
+            strcpy(msg.mesg_text, buf);
             i=find_group(&msg, groups);
             find_sender_name(&msg, users);
             for (int k=0; k<MAX_USERS; k++) {
@@ -286,5 +345,15 @@ int main() {
                 }
             send_communicate("You've been removed from the group.\n", &msg, &users[msg.sender_id]);
             }
+        else if (msg.mesg_type == OPEN_BOX) {
+            if (users[msg.sender_id].messages_in_box == 0) {
+                printf("User don't have messages in box\n");
+                send_communicate("You dont have any messages in box\n", &msg, &users[msg.sender_id]);
+            }
+            for (int k=0; k<users[msg.sender_id].messages_in_box; k++) {
+                send_message(&users[msg.sender_id].buffer[k], users);
+            }
         }
+        }
+
     }
