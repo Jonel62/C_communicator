@@ -9,6 +9,7 @@
 
 #define MAX 256
 #define NAME_LENGTH 16
+#define OPTION_LENGTH 64
 
 //communicates
 #define IN_BOX_MESSAGE 20
@@ -25,6 +26,7 @@
 #define GROUP_USERS 10
 #define LEAVE_GROUP 11
 #define OPEN_BOX 12
+#define LOGOUT 13
 
 struct message {
     long mesg_type;
@@ -35,6 +37,57 @@ struct message {
 };
 
 int myid;
+
+void print_help() {
+    printf("Available options:\n"
+           "logout\n"
+           "message\n"
+           "user_list\n"
+           "users_in_group\n"
+           "make_group\n"
+           "join_group\n"
+           "group_message\n"
+           "groups_list\n"
+           "leave_group\n"
+           "open_box\n");
+}
+
+void option_handler(const char option[OPTION_LENGTH], struct message* msg) {
+
+    if (strcmp(option, "logout") == 0) {
+        msg->mesg_type = LOGOUT;
+    }
+    else if (strcmp(option, "message") == 0) {
+        msg->mesg_type = MESSAGE;
+    }
+    else if (strcmp(option, "user_list") == 0) {
+        msg->mesg_type = USER_LIST;
+    }
+    else if (strcmp(option, "make_group") == 0) {
+        msg->mesg_type = MAKE_GROUP;
+    }
+    else if (strcmp(option, "join_group") == 0) {
+        msg->mesg_type = JOIN_GROUP;
+    }
+    else if (strcmp(option, "group_message") == 0) {
+        msg->mesg_type = GROUP_MESSAGE;
+    }
+    else if (strcmp(option, "groups_list") == 0) {
+        msg->mesg_type = GROUPS_LIST;
+    }
+    else if (strcmp(option, "users_in_group") == 0) {
+        msg->mesg_type = GROUP_USERS;
+    }
+    else if (strcmp(option, "leave_group") == 0) {
+        msg->mesg_type = LEAVE_GROUP;
+    }
+    else if (strcmp(option, "open_box") == 0) {
+        msg->mesg_type = OPEN_BOX;
+    }
+    else if (strcmp(option, "help") == 0) {
+        print_help();
+    }
+}
 
 void handle_sigint(int sig) {
     printf("\nRecived signal %d. Deleting queue...\n", sig);
@@ -94,34 +147,39 @@ void recieve_message(struct message* msg) {
     }
 }
 
+void login(struct message* msg, int id, int sid) {
+    msg->mesg_type = LOGIN;
+    msg->sender_id = myid;
+    msg->receiver_id = 0;
+    printf("Enter your username: ");
+    scanf("%s", msg->mesg_text);
+    char name[NAME_LENGTH];
+    strcpy(name, msg->mesg_text);
+    msgsnd(sid, msg,
+           sizeof(*msg) - sizeof(long),
+           0);
+    printf("Waiting for server...\n");
+    msgrcv(myid, msg,
+           sizeof(*msg) - sizeof(long),
+           0, 0);
+    if (msg->mesg_type==ERROR) {
+        printf("loggin failed");
+        exit(1);
+    }
+}
+
 int main() {
     srand(time(NULL));
     int id;
+    char option[OPTION_LENGTH];
     int r = rand()%100000;
     myid = msgget(r, 0666 | IPC_CREAT);
     key_t serverkey = ftok("server", 65);
     int sid = msgget(serverkey, 0666);
-
     struct message msg;
-    msg.mesg_type = LOGIN;
-    msg.sender_id = myid;
-    msg.receiver_id = 0;
-    printf("Enter your username: ");
-    scanf("%s", msg.mesg_text);
-    char name[NAME_LENGTH];
-    strcpy(name, msg.mesg_text);
 
-    msgsnd(sid, &msg,
-           sizeof(msg) - sizeof(long),
-           0);
-    printf("Waiting for server...\n");
-    msgrcv(myid, &msg,
-           sizeof(msg) - sizeof(long),
-           0, 0);
-    if (msg.mesg_type==ERROR) {
-        printf("loggin failed");
-        exit(1);
-    }
+    login(&msg, id, sid);
+
     printf("Your id is: %d\n", msg.receiver_id);
     id=msg.receiver_id;
     if (fork() == 0) {
@@ -130,57 +188,38 @@ int main() {
 
         printf("From server: %s\n", msg.mesg_text);
         while (1) {
-            printf("What do you want to do (message=2, user_list=3, make_group=6): ");
-            scanf("%ld", &msg.mesg_type);
+            printf("What do you want to do (help): ");
+            scanf("%s", option);
+            option_handler(&option, &msg);
             if (msg.mesg_type == MESSAGE) {
                 send_message(&msg, id, sid);
             }
             else if (msg.mesg_type == USER_LIST) {
-                msg.sender_id = id;
-                msg.receiver_id = -1;
-                msgsnd(sid, &msg,
-                   sizeof(msg) - sizeof(long),
-                   0);
+                send_server_message(&msg, id, sid);
                 sleep(1);
             }
             else if (msg.mesg_type == MAKE_GROUP) {
-                msg.sender_id = id;
-                msg.receiver_id = -1;
                 printf("Enter group name: ");
                 scanf("%s", msg.mesg_text);
-                msgsnd(sid, &msg,
-                   sizeof(msg) - sizeof(long),
-                   0);
+                send_server_message(&msg, id, sid);
                 sleep(1);
             }
             else if (msg.mesg_type == GROUPS_LIST) {
-                msg.sender_id = id;
-                msg.receiver_id = -1;
-                msgsnd(sid, &msg,
-                   sizeof(msg) - sizeof(long),
-                   0);
+                send_server_message(&msg, id, sid);
                 sleep(1);
             }
             else if (msg.mesg_type == JOIN_GROUP) {
-                msg.sender_id = id;
-                msg.receiver_id = -1;
                 printf("Enter group name: ");
                 scanf("%s", msg.name);
-                msgsnd(sid, &msg,
-                   sizeof(msg) - sizeof(long),
-                   0);
+                send_server_message(&msg, id, sid);
             }
             else if (msg.mesg_type == GROUP_MESSAGE) {
-                msg.sender_id = id;
-                msg.receiver_id = -1;
                 printf("Enter group name: ");
                 scanf("%s", msg.name);
                 printf("Enter message: ");
                 getchar();
                 fgets(msg.mesg_text, MAX, stdin);
-                msgsnd(sid, &msg,
-                   sizeof(msg) - sizeof(long),
-                   0);
+                send_server_message(&msg, id, sid);
             }
             else if (msg.mesg_type == GROUP_USERS) {
                 printf("Enter group name: ");
@@ -189,21 +228,13 @@ int main() {
                 sleep(1);
             }
             else if (msg.mesg_type == LEAVE_GROUP) {
-                msg.sender_id = id;
-                msg.receiver_id = -1;
                 printf("Enter group name: ");
                 scanf("%s", msg.name);
-                msgsnd(sid, &msg,
-                sizeof(msg) - sizeof(long),
-                0);
+                send_server_message(&msg, id, sid);
                 sleep(1);
             }
             else if (msg.mesg_type == OPEN_BOX) {
-                msg.sender_id = id;
-                msg.receiver_id = -1;
-                msgsnd(sid, &msg,
-                sizeof(msg) - sizeof(long),
-                0);
+                send_server_message(&msg, id, sid);
             }
         }
     }
