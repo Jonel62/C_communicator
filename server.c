@@ -29,6 +29,7 @@
 #define GROUP_USERS 10
 #define LEAVE_GROUP 11
 #define OPEN_BOX 12
+#define LOGOUT 13
 
 struct message {
     long mesg_type;
@@ -209,6 +210,16 @@ void send_user_list(struct message* msg, struct user* users) {
     send_communicate(text, msg, &users[msg->sender_id]);
     printf("Sended user list to %s\n", users[msg->sender_id].name);
 }
+
+void logout(struct user* users,int id) {
+    char buf[NAME_LENGTH];
+    strcpy(buf, users[id].name);
+    users[id]=user_default;
+    strcpy(users[id].name, buf);
+    users[id].user_id=id;
+    printf("User %s logged out\n", users[id].name);
+}
+
 void check_users(struct user* users) {
     for (int j = 0; j < MAX_USERS; j++) {
         if (users[j].user_id < 0 || users[j].is_online == false) {
@@ -216,11 +227,8 @@ void check_users(struct user* users) {
         }
         long last_seen = time(NULL) - users[j].last_seen;
         if (last_seen >= 10) {
-            printf("User %d not responding\n user %d is offline\n", users[j].user_id, users[j].user_id);
-            char buf[NAME_LENGTH];
-            strcpy(buf, users[j].name);
-            users[j]=user_default;
-            strcpy(users[j].name, buf);
+            printf("User %d not responding\n", users[j].user_id, users[j].user_id);
+            logout(users, j);
         }
     }
 }
@@ -272,88 +280,108 @@ int main() {
             perror("msgrcv");
             continue;
                    }
-        if (msg.mesg_type == LOGIN) {
-            i = find_user(users, &msg);
-            if (i != -1) {
-                login_user(&msg, &users[i], &i);
-            }
-            else {
-                printf("Loggin failed. User not found.\n");
-                msg.mesg_type = ERROR;
-                if (msgsnd(msg.sender_id, &msg,
-                   sizeof(msg) - sizeof(long),
-                   0) == -1) {
-                    perror("msgsnd");
-                    }
-            }
-        }
-        else if (msg.mesg_type == MESSAGE) {
-            char buf[MAX];
-            strcpy(buf, msg.mesg_text);
-            send_communicate("Your message has been accepted", &msg, &users[msg.sender_id]);
-            strcpy(msg.mesg_text, buf);
-            find_receiver(&msg, users);
-            find_sender_name(&msg, users);
-            send_message(&msg, users);//&users[msg.receiver_id]);
-            send_communicate("Your message has been delivered", &msg, &users[msg.sender_id]);
-        }
-        else if (msg.mesg_type == USER_LIST) {
-            send_user_list(&msg, users);
-        }
-        else if (msg.mesg_type == HEART_BEAT) {
-            users[msg.sender_id].last_seen = time(NULL);
-        }
-        else if (msg.mesg_type == MAKE_GROUP) {
-            i=find_free_group_slot(groups);
-            make_group(&i, &groups[i], &msg);
-        }
-        else if (msg.mesg_type == GROUPS_LIST) {
-            send_groups_list(&msg, groups, &users);
-        }
-        else if (msg.mesg_type == JOIN_GROUP) {
-            i=find_group(&msg, groups);
-            groups[i].users_id[msg.sender_id]=users[msg.sender_id].user_id;
-            printf("Added user %d to group %s\n", msg.sender_id, groups[i].name);
-        }
-        else if (msg.mesg_type == GROUP_MESSAGE) {
-            char buf[MAX];
-            printf("Message to group %s from %d\n", msg.name, msg.sender_id);
-            strcpy(buf, msg.mesg_text);
-            send_communicate("Your message has been accepted", &msg, &users[msg.sender_id]);
-            strcpy(msg.mesg_text, buf);
-            i=find_group(&msg, groups);
-            find_sender_name(&msg, users);
-            for (int k=0; k<MAX_USERS; k++) {
-                if (groups[i].users_id[k] < 0 || groups[i].users_id[k] == msg.sender_id) {
-                    continue;
-                }
-                msg.receiver_id=groups[i].users_id[k];
-                send_message(&msg, &users[groups[i].users_id[k]]);
-            }
-            send_communicate("Your message has been delivered to group", &msg, &users[msg.sender_id]);
-        }
-        else if (msg.mesg_type == GROUP_USERS) {
-            i=find_group(&msg, groups);
-            send_group_users(&groups[i], users, &msg);
-            }
-        else if (msg.mesg_type == LEAVE_GROUP) {
-            i=find_group(&msg, groups);
-            for (int k=0; k<MAX_USERS; k++) {
-                if (groups[i].users_id[k] == msg.sender_id) {
-                    groups[i].users_id[k] = -1;
+        switch (msg.mesg_type) {
+            case LOGIN:
+                i = find_user(users, &msg);
+                if (i != -1) {
+                    login_user(&msg, &users[i], &i);
+                } else {
+                    printf("Login failed. User not found.\n");
+                    msg.mesg_type = ERROR;
+                    if (msgsnd(msg.sender_id, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+                        perror("msgsnd");
                     }
                 }
-            send_communicate("You've been removed from the group.\n", &msg, &users[msg.sender_id]);
+                break;
+
+            case MESSAGE: {
+                char buf[MAX];
+                strcpy(buf, msg.mesg_text);
+                send_communicate("Your message has been accepted", &msg, &users[msg.sender_id]);
+                strcpy(msg.mesg_text, buf);
+                find_receiver(&msg, users);
+                find_sender_name(&msg, users);
+                send_message(&msg, users);
+                send_communicate("Your message has been delivered", &msg, &users[msg.sender_id]);
+                break;
             }
-        else if (msg.mesg_type == OPEN_BOX) {
-            if (users[msg.sender_id].messages_in_box == 0) {
-                printf("User don't have messages in box\n");
-                send_communicate("You dont have any messages in box\n", &msg, &users[msg.sender_id]);
+
+            case USER_LIST:
+                send_user_list(&msg, users);
+                break;
+
+            case HEART_BEAT:
+                users[msg.sender_id].last_seen = time(NULL);
+                break;
+
+            case MAKE_GROUP:
+                i = find_free_group_slot(groups);
+                make_group(&i, &groups[i], &msg);
+                break;
+
+            case GROUPS_LIST:
+                send_groups_list(&msg, groups, &users);
+                break;
+
+            case JOIN_GROUP:
+                i = find_group(&msg, groups);
+                groups[i].users_id[msg.sender_id] = users[msg.sender_id].user_id;
+                printf("Added user %d to group %s\n", msg.sender_id, groups[i].name);
+                break;
+
+            case GROUP_MESSAGE: {
+                char buf[MAX];
+                printf("Message to group %s from %d\n", msg.name, msg.sender_id);
+                strcpy(buf, msg.mesg_text);
+                send_communicate("Your message has been accepted", &msg, &users[msg.sender_id]);
+                strcpy(msg.mesg_text, buf);
+                i = find_group(&msg, groups);
+                find_sender_name(&msg, users);
+                for (int k = 0; k < MAX_USERS; k++) {
+                    if (groups[i].users_id[k] < 0 || groups[i].users_id[k] == msg.sender_id) {
+                        continue;
+                    }
+                    msg.receiver_id = groups[i].users_id[k];
+                    send_message(&msg, &users[groups[i].users_id[k]]);
+                }
+                send_communicate("Your message has been delivered to group", &msg, &users[msg.sender_id]);
+                break;
             }
-            for (int k=0; k<users[msg.sender_id].messages_in_box; k++) {
-                send_message(&users[msg.sender_id].buffer[k], users);
-            }
+
+            case GROUP_USERS:
+                i = find_group(&msg, groups);
+                send_group_users(&groups[i], users, &msg);
+                break;
+
+            case LEAVE_GROUP:
+                i = find_group(&msg, groups);
+                for (int k = 0; k < MAX_USERS; k++) {
+                    if (groups[i].users_id[k] == msg.sender_id) {
+                        groups[i].users_id[k] = -1;
+                    }
+                }
+                send_communicate("You've been removed from the group.\n", &msg, &users[msg.sender_id]);
+                break;
+
+            case OPEN_BOX:
+                if (users[msg.sender_id].messages_in_box == 0) {
+                    printf("User doesn't have messages in box\n");
+                    send_communicate("You dont have any messages in box\n", &msg, &users[msg.sender_id]);
+                } else {
+                    for (int k = 0; k < users[msg.sender_id].messages_in_box; k++) {
+                        send_message(&users[msg.sender_id].buffer[k], users);
+                    }
+                }
+                break;
+
+            case LOGOUT:
+                logout(users, msg.sender_id);
+                break;
+
+            default:
+                printf("Warning: Received unknown message type: %ld\n", msg.mesg_type);
+                break;
         }
-        }
+    }
 
     }

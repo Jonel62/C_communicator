@@ -12,6 +12,7 @@
 #define OPTION_LENGTH 64
 
 //communicates
+#define HELP 102
 #define IN_BOX_MESSAGE 20
 #define ERROR 101
 #define LOGIN 1
@@ -37,6 +38,7 @@ struct message {
 };
 
 int myid;
+int cid;
 
 void print_help() {
     printf("Available options:\n"
@@ -86,6 +88,7 @@ void option_handler(const char option[OPTION_LENGTH], struct message* msg) {
     }
     else if (strcmp(option, "help") == 0) {
         print_help();
+        msg->mesg_type = HELP;
     }
 }
 
@@ -96,6 +99,15 @@ void handle_sigint(int sig) {
         perror("Queue error");
         exit(1);
     }
+
+    printf("Queue %d was deleted\nQuitting...\n", myid);
+    exit(0);
+}
+
+void handle_sig(int sig) {
+    printf("\nRecived signal %d. processes\n", sig);
+
+    kill(cid, SIGTERM);
 
     printf("Queue %d was deleted\nQuitting...\n", myid);
     exit(0);
@@ -182,7 +194,8 @@ int main() {
 
     printf("Your id is: %d\n", msg.receiver_id);
     id=msg.receiver_id;
-    if (fork() == 0) {
+    int p=fork();
+    if (p != 0) {
         signal(SIGINT, handle_sigint);
         signal(SIGTERM, handle_sigint);
 
@@ -191,64 +204,78 @@ int main() {
             printf("What do you want to do (help): ");
             scanf("%s", option);
             option_handler(&option, &msg);
-            if (msg.mesg_type == MESSAGE) {
-                send_message(&msg, id, sid);
-            }
-            else if (msg.mesg_type == USER_LIST) {
-                send_server_message(&msg, id, sid);
-                sleep(1);
-            }
-            else if (msg.mesg_type == MAKE_GROUP) {
-                printf("Enter group name: ");
-                scanf("%s", msg.mesg_text);
-                send_server_message(&msg, id, sid);
-                sleep(1);
-            }
-            else if (msg.mesg_type == GROUPS_LIST) {
-                send_server_message(&msg, id, sid);
-                sleep(1);
-            }
-            else if (msg.mesg_type == JOIN_GROUP) {
-                printf("Enter group name: ");
-                scanf("%s", msg.name);
-                send_server_message(&msg, id, sid);
-            }
-            else if (msg.mesg_type == GROUP_MESSAGE) {
-                printf("Enter group name: ");
-                scanf("%s", msg.name);
-                printf("Enter message: ");
-                getchar();
-                fgets(msg.mesg_text, MAX, stdin);
-                send_server_message(&msg, id, sid);
-            }
-            else if (msg.mesg_type == GROUP_USERS) {
-                printf("Enter group name: ");
-                scanf("%s", msg.name);
-                send_server_message(&msg, id, sid);
-                sleep(1);
-            }
-            else if (msg.mesg_type == LEAVE_GROUP) {
-                printf("Enter group name: ");
-                scanf("%s", msg.name);
-                send_server_message(&msg, id, sid);
-                sleep(1);
-            }
-            else if (msg.mesg_type == OPEN_BOX) {
-                send_server_message(&msg, id, sid);
+            switch (msg.mesg_type) {
+                case MESSAGE:
+                    send_message(&msg, id, sid);
+                    sleep(1);
+                    break;
+
+                case USER_LIST:
+                case GROUPS_LIST:
+                case OPEN_BOX:
+                    send_server_message(&msg, id, sid);
+                    if (msg.mesg_type != OPEN_BOX) sleep(1);
+                    sleep(1);
+                    break;
+
+                case MAKE_GROUP:
+                    printf("Enter group name: ");
+                    scanf("%s", msg.mesg_text);
+                    send_server_message(&msg, id, sid);
+                    sleep(1);
+                    break;
+
+                case JOIN_GROUP:
+                    printf("Enter group name: ");
+                    scanf("%s", msg.name);
+                    send_server_message(&msg, id, sid);
+                    sleep(1);
+                    break;
+
+                case GROUP_MESSAGE:
+                    printf("Enter group name: ");
+                    scanf("%s", msg.name);
+                    printf("Enter message: ");
+                    getchar(); // Wyczyszczenie bufora po scanf
+                    fgets(msg.mesg_text, MAX, stdin);
+                    send_server_message(&msg, id, sid);
+                    sleep(1);
+                    break;
+
+                case GROUP_USERS:
+                case LEAVE_GROUP:
+                    printf("Enter group name: ");
+                    scanf("%s", msg.name);
+                    send_server_message(&msg, id, sid);
+                    sleep(1);
+                    break;
+                case HELP:
+                    break;
+                case LOGOUT:
+                    send_server_message(&msg, id, sid);
+                    printf("Logging out\n");
+                    kill(p, SIGTERM);
+                    kill(getpid(), SIGTERM);
+                    sleep(1);
+                default:
+                    printf("Unknown message type: %ld\n", msg.mesg_type);
+                    break;
             }
         }
     }
     else {
-        while (1) {
-            if (fork() == 0) {
-                recieve_message(&msg);
+            cid = fork();
+            if (cid == 0) {
+                while (1) {
+                    recieve_message(&msg);
+                }
             }
             else {
                 while (1) {
+                    signal(SIGTERM, handle_sig);
                     heartbeat(&msg, id, sid);
                 }
             }
         }
 
     }
-}
