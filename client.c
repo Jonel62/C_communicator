@@ -109,13 +109,13 @@ void handle_sig(int sig) {
 
     kill(cid, SIGTERM);
 
-    printf("Quitting...\n", myid);
+    printf("Quitting...\n");
     exit(0);
 }
 
 void send_message(struct message* msg, int sender_id, int sid) {
     printf("Which user?\n");
-    scanf("%s", &msg->name);
+    scanf("%s", msg->name);
     msg->sender_id = sender_id;
     printf("Send message:");
     getchar();
@@ -149,13 +149,13 @@ void recieve_message(struct message* msg) {
    sizeof(*msg) - sizeof(long),
    0, 0);
     if (msg->mesg_type == MESSAGE) {
-        printf("\nReceived message from user %s:\n %s\n", msg->name, msg->mesg_text);
+        printf("Received message from user %s:\n %s", msg->name, msg->mesg_text);
     }
     else if (msg->mesg_type == SERVER_COMMUNICATE) {
-        printf("\nReceived server communicate:\n %s\n", msg->mesg_text);
+        printf("Received server communicate:\n %s", msg->mesg_text);
     }
     else if (msg->mesg_type == IN_BOX_MESSAGE) {
-        printf("\nReceived in box message from %s:\n %s\n", msg->name, msg->mesg_text);
+        printf("Received in box message from %s:\n %s", msg->name, msg->mesg_text);
     }
 }
 
@@ -203,11 +203,10 @@ int main() {
         while (1) {
             printf("What do you want to do (help): ");
             scanf("%s", option);
-            option_handler(&option, &msg);
+            option_handler(option, &msg);
             switch (msg.mesg_type) {
                 case MESSAGE:
                     send_message(&msg, id, sid);
-                    sleep(1);
                     break;
 
                 case USER_LIST:
@@ -215,21 +214,18 @@ int main() {
                 case OPEN_BOX:
                     send_server_message(&msg, id, sid);
                     if (msg.mesg_type != OPEN_BOX) sleep(1);
-                    sleep(1);
                     break;
 
                 case MAKE_GROUP:
                     printf("Enter group name: ");
                     scanf("%s", msg.mesg_text);
                     send_server_message(&msg, id, sid);
-                    sleep(1);
                     break;
 
                 case JOIN_GROUP:
                     printf("Enter group name: ");
                     scanf("%s", msg.name);
                     send_server_message(&msg, id, sid);
-                    sleep(1);
                     break;
 
                 case GROUP_MESSAGE:
@@ -239,7 +235,6 @@ int main() {
                     getchar(); // Wyczyszczenie bufora po scanf
                     fgets(msg.mesg_text, MAX, stdin);
                     send_server_message(&msg, id, sid);
-                    sleep(1);
                     break;
 
                 case GROUP_USERS:
@@ -247,7 +242,6 @@ int main() {
                     printf("Enter group name: ");
                     scanf("%s", msg.name);
                     send_server_message(&msg, id, sid);
-                    sleep(1);
                     break;
                 case HELP:
                     break;
@@ -256,11 +250,11 @@ int main() {
                     printf("Logging out\n");
                     kill(p, SIGTERM);
                     kill(getpid(), SIGTERM);
-                    sleep(1);
                 default:
                     printf("Unknown message type: %ld\n", msg.mesg_type);
                     break;
             }
+            sleep(1);
         }
     }
     else {

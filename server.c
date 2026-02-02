@@ -10,8 +10,8 @@
 
 #define NAME_LENGTH 16
 #define MAX 256
-#define MAX_USERS 24
-#define MAX_GROUPS 16
+#define MAX_USERS 12
+#define MAX_GROUPS 6
 #define MESSAGE_IN_BOX 20
 
 //communicates
@@ -125,6 +125,7 @@ int find_free_group_slot(struct group* groups) {
         }
     }
     printf("There are none slots avialable\n");
+    return -1;
 }
 
 
@@ -164,6 +165,7 @@ int find_group(struct message* msg, struct group* groups) {
         }
     }
     printf("This group doesnt exist\n");
+    return -1;
 }
 
 void send_group_users(struct group* group, struct user* users, struct message* msg) {
@@ -226,7 +228,7 @@ void check_users(struct user* users) {
         }
         long last_seen = time(NULL) - users[j].last_seen;
         if (last_seen >= 10) {
-            printf("User %d not responding\n", users[j].user_id, users[j].user_id);
+            printf("User %d not responding\n", users[j].user_id);
             logout(users, j);
         }
     }
@@ -278,9 +280,6 @@ int main() {
     }
     fclose(file);
     ////////////////////////
-    for (int j = 0; j < MAX_GROUPS; j++) {
-        printf("%s\n",groups[j].name);
-    }
     key_t key = ftok("server", 65);
     sid = msgget(key, 0666 | IPC_CREAT);
     signal(SIGINT, handle_sigint);
@@ -314,12 +313,12 @@ int main() {
             case MESSAGE: {
                 char buf[MAX];
                 strcpy(buf, msg.mesg_text);
-                send_communicate("Your message has been accepted", &msg, &users[msg.sender_id]);
+                send_communicate("Your message has been accepted\n", &msg, &users[msg.sender_id]);
                 strcpy(msg.mesg_text, buf);
                 find_receiver(&msg, users);
                 find_sender_name(&msg, users);
                 send_message(&msg, users);
-                send_communicate("Your message has been delivered", &msg, &users[msg.sender_id]);
+                send_communicate("Your message has been delivered\n", &msg, &users[msg.sender_id]);
                 break;
             }
 
@@ -337,7 +336,7 @@ int main() {
                 break;
 
             case GROUPS_LIST:
-                send_groups_list(&msg, groups, &users);
+                send_groups_list(&msg, groups, users);
                 break;
 
             case JOIN_GROUP:
