@@ -140,12 +140,14 @@ void send_message(struct message* msg, struct user * users) {
             perror("msgsnd");
                    }
         printf("Sended message to queue %d\n", users[msg->receiver_id].queue_id);
+        send_communicate("Your message has been delivered\n", msg, &users[msg->sender_id]);
     }
     else {
         msg->mesg_type=IN_BOX_MESSAGE;
         users[msg->receiver_id].buffer[users[msg->receiver_id].messages_in_box]=*msg;
         users[msg->receiver_id].messages_in_box=users[msg->receiver_id].messages_in_box+1;
-        printf("message sended to box\n");
+        printf("message sended to a box\n");
+        send_communicate("message sended to a box\n", msg, &users[msg->sender_id]);
     }
 }
 
@@ -153,9 +155,10 @@ void find_receiver(struct message* msg, struct user* users) {
     for (int j = 0; j < MAX_USERS; j++) {
         if (strcmp(users[j].name, msg->name) == 0) {
             msg->receiver_id=users[j].user_id;
-            break;
+            return;
         }
     }
+    msg->receiver_id=-1;
 }
 
 int find_group(struct message* msg, struct group* groups) {
@@ -316,9 +319,13 @@ int main() {
                 send_communicate("Your message has been accepted\n", &msg, &users[msg.sender_id]);
                 strcpy(msg.mesg_text, buf);
                 find_receiver(&msg, users);
-                find_sender_name(&msg, users);
-                send_message(&msg, users);
-                send_communicate("Your message has been delivered\n", &msg, &users[msg.sender_id]);
+                if (msg.receiver_id==-1) {
+                    send_communicate("User don't exist\n", &msg, &users[msg.sender_id]);
+                }
+                else {
+                    find_sender_name(&msg, users);
+                    send_message(&msg, users);
+                }
                 break;
             }
 

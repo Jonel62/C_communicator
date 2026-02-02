@@ -11,6 +11,14 @@
 #define NAME_LENGTH 16
 #define OPTION_LENGTH 64
 
+//text colors
+#define RED     "\x1b[31m"
+#define GREEN   "\x1b[32m"
+#define YELLOW  "\x1b[33m"
+#define CYAN    "\x1b[1;36m"
+#define RESET   "\x1b[0m"
+#define BOLD  "\x1b[1m"
+
 //communicates
 #define HELP 102
 #define IN_BOX_MESSAGE 20
@@ -100,7 +108,7 @@ void handle_sigint(int sig) {
         exit(1);
     }
 
-    printf("Queue %d was deleted\nQuitting...\n", myid);
+    printf(RED"Queue %d was deleted\nQuitting...\n"RESET, myid);
     exit(0);
 }
 
@@ -149,13 +157,13 @@ void recieve_message(struct message* msg) {
    sizeof(*msg) - sizeof(long),
    0, 0);
     if (msg->mesg_type == MESSAGE) {
-        printf("Received message from user %s:\n %s", msg->name, msg->mesg_text);
+        printf(CYAN"Received message from user %s"RESET":\n "BOLD"%s"RESET, msg->name, msg->mesg_text);
     }
     else if (msg->mesg_type == SERVER_COMMUNICATE) {
-        printf("Received server communicate:\n %s", msg->mesg_text);
+        printf(YELLOW"Server communicate:"RESET" %s", msg->mesg_text);
     }
     else if (msg->mesg_type == IN_BOX_MESSAGE) {
-        printf("Received in box message from %s:\n %s", msg->name, msg->mesg_text);
+        printf(GREEN"Received in box message from %s:"RESET"\n %s", msg->name, msg->mesg_text);
     }
 }
 
