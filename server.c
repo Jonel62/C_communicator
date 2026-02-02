@@ -302,7 +302,14 @@ int main() {
         switch (msg.mesg_type) {
             case LOGIN:
                 i = find_user(users, &msg);
-                if (i != -1) {
+                if (users[i].is_online) {
+                    printf("Login failed. User already logged in.\n");
+                    msg.mesg_type = ERROR;
+                    if (msgsnd(msg.sender_id, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+                        perror("msgsnd");
+                    }
+                }
+                else if (i != -1) {
                     login_user(&msg, &users[i], &i);
                 } else {
                     printf("Login failed. User not found.\n");
