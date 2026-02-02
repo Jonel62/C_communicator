@@ -105,11 +105,11 @@ void handle_sigint(int sig) {
 }
 
 void handle_sig(int sig) {
-    printf("\nRecived signal %d. processes\n", sig);
+    printf("\nRecived signal %d.", sig);
 
     kill(cid, SIGTERM);
 
-    printf("Queue %d was deleted\nQuitting...\n", myid);
+    printf("Quitting...\n", myid);
     exit(0);
 }
 

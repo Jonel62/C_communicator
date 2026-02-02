@@ -196,7 +196,7 @@ void send_groups_list(struct message* msg, struct group* groups, struct user* us
         }
     }
     send_communicate(text, msg, &users[msg->sender_id]);
-    printf("Sended groups list to %s\n", users[msg->receiver_id].name);
+    printf("Sended groups list to %s\n", users[msg->sender_id].name);
 }
 
 void send_user_list(struct message* msg, struct user* users) {
@@ -212,11 +212,10 @@ void send_user_list(struct message* msg, struct user* users) {
 }
 
 void logout(struct user* users,int id) {
-    char buf[NAME_LENGTH];
-    strcpy(buf, users[id].name);
-    users[id]=user_default;
-    strcpy(users[id].name, buf);
-    users[id].user_id=id;
+    users[id].is_online=false;
+    users[id].messages_in_box=0;
+    users[id].last_seen=time(NULL);
+    users[id].queue_id=-1;
     printf("User %s logged out\n", users[id].name);
 }
 
@@ -244,10 +243,11 @@ int main() {
     struct group groups[MAX_GROUPS];
     struct user users[MAX_USERS];
     init_user_list(users);
-    FILE *file;
+    init_group_list(groups);
+    FILE *file, *file1;
     char buffer[MAX];
     int n = 0;
-    //loading file//
+    ///////loading_files///////
     file = fopen("users.txt", "r");
 
     if (file == NULL) {
@@ -262,8 +262,25 @@ int main() {
         n++;
     }
     fclose(file);
-    /////////
-    init_group_list(groups);
+    ////////////////////////
+    n=0;
+    file = fopen("groups.txt", "r");
+
+    if (file == NULL) {
+        perror("File not found");
+        return 1;
+    }
+
+    while (fgets(buffer, MAX, file) != NULL && n < MAX_GROUPS) {
+        buffer[strcspn(buffer, "\r\n")] = 0;
+        strcpy(groups[n].name, buffer);
+        n++;
+    }
+    fclose(file);
+    ////////////////////////
+    for (int j = 0; j < MAX_GROUPS; j++) {
+        printf("%s\n",groups[j].name);
+    }
     key_t key = ftok("server", 65);
     sid = msgget(key, 0666 | IPC_CREAT);
     signal(SIGINT, handle_sigint);
@@ -370,6 +387,7 @@ int main() {
                 } else {
                     for (int k = 0; k < users[msg.sender_id].messages_in_box; k++) {
                         send_message(&users[msg.sender_id].buffer[k], users);
+                        users[msg.sender_id].buffer[k] = (struct message){IN_BOX_MESSAGE, -1, -1, "", ""};
                     }
                 }
                 break;
